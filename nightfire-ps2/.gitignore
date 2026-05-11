@@ -1,0 +1,5 @@
+# Don't commit copyrighted material
+*.iso
+bios/*.BIN
+bios/*.MEC
+bios/*.NVM

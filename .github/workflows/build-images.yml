@@ -1,0 +1,202 @@
+name: Build & Push Images
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - 'nightfire-ps2/**'
+      - 'doohly-signage/**'
+      - 'chromium-kiosk/**'
+      - 'alpine-chromium/**'
+      - 'ubuntu-desktop-systemd/**'
+      - '.github/workflows/build-images.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'nightfire-ps2/**'
+      - 'doohly-signage/**'
+      - 'chromium-kiosk/**'
+      - 'alpine-chromium/**'
+      - 'ubuntu-desktop-systemd/**'
+      - '.github/workflows/build-images.yml'
+  workflow_dispatch:
+    inputs:
+      example:
+        description: 'Which example to build (or "all")'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - doohly-signage
+          - chromium-kiosk
+          - alpine-chromium
+          - ubuntu-desktop-systemd
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: ${{ github.repository_owner }}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Decide which examples to build based on what changed (push) or input
+  # (workflow_dispatch). Pull requests always build everything for safety.
+  # ---------------------------------------------------------------------------
+  detect-changes:
+    name: Detect changed examples
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      any: ${{ steps.set-matrix.outputs.any }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine matrix
+        id: set-matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ALL_EXAMPLES=(doohly-signage chromium-kiosk alpine-chromium ubuntu-desktop-systemd)
+          # NOTE: nightfire-ps2 is intentionally excluded from CI — it requires
+          # proprietary BIOS files and a game ISO that we cannot redistribute.
+
+          selected=()
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            input="${{ inputs.example }}"
+            if [[ "$input" == "all" ]]; then
+              selected=("${ALL_EXAMPLES[@]}")
+            else
+              selected=("$input")
+            fi
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            selected=("${ALL_EXAMPLES[@]}")
+          else
+            # Push: build only what changed, or everything on tags
+            if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+              selected=("${ALL_EXAMPLES[@]}")
+            else
+              before="${{ github.event.before }}"
+              # Handle initial push (no "before") by diffing against HEAD~1
+              if [[ -z "$before" || "$before" == "0000000000000000000000000000000000000000" ]]; then
+                before="HEAD~1"
+              fi
+              changed=$(git diff --name-only "$before" "${{ github.sha }}" || true)
+
+              # If the workflow itself changed, rebuild everything
+              if echo "$changed" | grep -q '^.github/workflows/build-images.yml$'; then
+                selected=("${ALL_EXAMPLES[@]}")
+              else
+                for ex in "${ALL_EXAMPLES[@]}"; do
+                  if echo "$changed" | grep -q "^${ex}/"; then
+                    selected+=("$ex")
+                  fi
+                done
+              fi
+            fi
+          fi
+
+          if [[ ${#selected[@]} -eq 0 ]]; then
+            echo "matrix={\"example\":[]}" >> "$GITHUB_OUTPUT"
+            echo "any=false" >> "$GITHUB_OUTPUT"
+            echo "No examples to build."
+          else
+            json=$(printf '%s\n' "${selected[@]}" | jq -R . | jq -sc '{example: .}')
+            echo "matrix=$json" >> "$GITHUB_OUTPUT"
+            echo "any=true" >> "$GITHUB_OUTPUT"
+            echo "Will build: ${selected[*]}"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Build each example in parallel for both amd64 and arm64.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build ${{ matrix.example }}
+    needs: detect-changes
+    if: needs.detect-changes.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        # Don't try to push from forks
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/admiral-${{ matrix.example }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Determine platforms
+        id: platforms
+        shell: bash
+        run: |
+          # ubuntu-desktop-systemd is amd64-only — building a multi-arch
+          # full DE under qemu is unreasonably slow.
+          case "${{ matrix.example }}" in
+            ubuntu-desktop-systemd)
+              echo "list=linux/amd64" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "list=linux/amd64,linux/arm64" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.example }}
+          file: ./${{ matrix.example }}/Dockerfile
+          platforms: ${{ steps.platforms.outputs.list }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.example }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.example }}
+          provenance: false
+
+      - name: Image summary
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          {
+            echo "### \`${{ matrix.example }}\` published"
+            echo
+            echo "**Platforms:** \`${{ steps.platforms.outputs.list }}\`"
+            echo
+            echo "**Tags:**"
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

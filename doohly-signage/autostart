@@ -1,0 +1,3 @@
+#!/bin/sh
+unclutter -idle 0.01 -root &
+/opt/doohly-player.AppImage --no-sandbox &
