@@ -9,7 +9,7 @@
 <h1 align="center">Admiral Examples</h1>
 
 <p align="center">
-  Reference container images for the <a href="https://admrl.co">Admiral</a> edge platform.
+  Simple build examples and workload starting points for the <a href="https://admrl.co">Admiral</a> edge platform.
 </p>
 
 <p align="center">
@@ -22,11 +22,13 @@
 
 # Admiral Examples
 
-A collection of reference container images for the [Admiral](https://admrl.co) edge platform.
+Examples and starting points for building workloads on the [Admiral](https://admrl.co) edge platform, from kiosks and signage to robotics and accelerated computing.
 
-Admiral runs OCI containers directly on edge hardware — phones, kiosks, signage, set-top boxes, anything with a Linux kernel and a screen. These examples show how to build images that take advantage of the host's GPU, audio, input devices, and network.
+The examples included in this repository are simple, self-contained demonstrations of how to build and package OCI workload images. They show the basics of startup, device access, graphics, audio, and networking.
 
-## Examples
+For more sophisticated applications, the separate public `workload-*` repositories below provide starting points for robotics with Copper or ROS 2, CUDA workloads, edge AI, and other complete applications.
+
+## Included Examples
 
 | Example | Description | Base Image |
 |---|---|---|
@@ -36,9 +38,28 @@ Admiral runs OCI containers directly on edge hardware — phones, kiosks, signag
 | [alpine-chromium](./alpine-chromium) | Minimal Chromium kiosk on Alpine using framebuffer + X11 | `alpine:3.21` |
 | [ubuntu-desktop-systemd](./ubuntu-desktop-systemd) | Full Ubuntu desktop running under systemd inside a container | `ubuntu:25.04` |
 
+## Public Workload Starting Points
+
+These standalone repositories go beyond the simple build examples above. They provide application stacks, runtime integration, and deployment patterns to adapt for your own workloads.
+
+| Workload | Starting Point |
+|---|---|
+| [workload-admiral-signage](https://github.com/AdmrlOS/workload-admiral-signage) | Signage development workload with a content studio, WPE WebKit, GPU rendering, and video integration on Allwinner T527. |
+| [workload-copper](https://github.com/AdmrlOS/workload-copper) | Copper robotics with a simulated warehouse rover, native control, telemetry, recordings, and verified replay. |
+| [workload-copper-flight](https://github.com/AdmrlOS/workload-copper-flight) | Copper flight simulation with native physics, CPU/CUDA policy inference, and a browser mission monitor. |
+| [workload-cuda-debug](https://github.com/AdmrlOS/workload-cuda-debug) | CUDA compute and driver diagnostics for NVIDIA Jetson, including runtime and PTX JIT checks. |
+| [workload-embedded-browser](https://github.com/AdmrlOS/workload-embedded-browser) | Reusable ARM64 WPE WebKit base for embedded kiosks, dashboards, and signage on Allwinner T527. |
+| [workload-jukebox](https://github.com/AdmrlOS/workload-jukebox) | AirPlay and Spotify Connect audio workload with configurable outputs and a local dashboard. |
+| [workload-nixos-demo](https://github.com/AdmrlOS/workload-nixos-demo) | NixOS userspace with systemd, on-device LLM chat, and CUDA integration on NVIDIA Jetson. |
+| [workload-npu-demo](https://github.com/AdmrlOS/workload-npu-demo) | llama.cpp text and image inference with mainline Rocket NPU offload on RK3588. |
+| [workload-ros2](https://github.com/AdmrlOS/workload-ros2) | ROS 2 C++ talker and Python listener with CycloneDDS discovery, service supervision, and optional SSH diagnostics. |
+| [workload-unitree-g1](https://github.com/AdmrlOS/workload-unitree-g1) | Reusable application userspace for the Unitree G1's Jetson Orin NX, including service management and camera integration. |
+
+Follow each repository's README for its build instructions, target hardware, and Admiral deployment configuration.
+
 ## Common Patterns
 
-Every example in this repo follows a few conventions:
+The examples included in this repository follow a few conventions:
 
 ### 1. SSH Access
 
@@ -84,4 +105,4 @@ PRs welcome. New examples should:
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+MIT — see [LICENSE](./LICENSE). The linked workload repositories have their own licensing.
